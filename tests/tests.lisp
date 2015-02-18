@@ -247,3 +247,14 @@
 
 (test start-of-file
   (is (equal "a" (parse '(progn esrap-liquid::sof "a") "a"))))
+
+
+(test token-iter
+  (let ((esrap-token-iter (esrap-liquid::mk-esrap-token-iter
+			   (esrap-liquid::mk-cache-iter (esrap-liquid::mk-string-iter "aaaaaaaaa"))
+			   :token 'triple-a)))
+    (is (equal '((#\a #\a #\a)
+		 (#\a #\a #\a)
+		 (#\a #\a #\a))
+	       (iter (for res in-iter esrap-token-iter)
+		     (collect res))))))

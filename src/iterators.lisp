@@ -80,7 +80,7 @@
 ;;; iterators - classes with NEXT-ITER method, which raises STOP-ITERATION when iterator is depleted
 (define-condition stop-iteration (error)
   ())
-(defgeneric next-iter (iter)
+(defgeneric next-iter (iter &key &allow-other-keys)
   (:documentation "Main method of iteration protocol"))
 
 (defclass string-iter ()
@@ -90,13 +90,27 @@
 (defun mk-string-iter (string &key (start 0))
   (make-instance 'string-iter :string string :start start))
 
-(defmethod next-iter ((iter string-iter))
+(defmethod next-iter ((iter string-iter) &key &allow-other-keys)
   (with-slots (str pos) iter
     (if (equal pos (length str))
 	(error 'stop-iteration)
 	(let ((char (char str pos)))
 	  (incf pos)
 	  char))))
+
+(defclass stream-iter ()
+  ((stream :initarg :stream :initform (error "Please, specify the underlying stream"))))
+
+(defun mk-stream-iter (stream)
+  (make-instance 'stream-iter :stream stream))
+
+(defmethod next-iter ((iter stream-iter) &key &allow-other-keys)
+  (with-slots (stream) iter
+    (let ((next-char (read-char stream nil)))
+      (if (not next-char)
+	  (error 'stop-iteration)
+	  next-char))))
+
 
 (defclass cache-iterator ()
   ((cached-vals)
@@ -146,7 +160,7 @@
 	    (t (setf cached-pos (+ cached-pos delta)))))))
 
   
-(defmethod next-iter ((iter cache-iterator))
+(defmethod next-iter ((iter cache-iterator) &key &allow-other-keys)
   (with-slots (cached-vals cached-pos sub-iter) iter
     (with-slots (vector) cached-vals
       (if (equal cached-pos (fill-pointer vector))

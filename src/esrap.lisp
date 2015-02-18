@@ -30,7 +30,7 @@
        (remhash ,var *rules*))))
 
 
-(defun parse-token-iter (expression token-iter &key junk-allowed)
+(defun parse-token-iter (expression token-iter &key junk-allowed (fail-error-p (not junk-allowed)))
   (let ((the-iter token-iter)
 	(*cache* (make-cache))
 	(the-position 0)
@@ -39,7 +39,7 @@
       (with-tmp-rule (tmp-rule expression)
 	(let ((result (handler-case (descend-with-rule tmp-rule)
 			(simple-esrap-error (e)
-			  (if junk-allowed
+			  (if (not fail-error-p)
 			      (values nil 0)
 			      (error e))))))
 	  (if-debug "after tmp-rule")
@@ -56,6 +56,12 @@
   "Parses TEXT using EXPRESSION from START to END. Incomplete parses
 are allowed only if JUNK-ALLOWED is true."
   (parse-token-iter expression (mk-esrap-iter-from-string text start end) :junk-allowed junk-allowed))
+
+(defun parse-stream (expression stream &key (junk-allowed t))
+  ;; We don't want to check for EOF since it may consume the character from stream,
+  ;; which is irreversible
+  (parse-token-iter expression (mk-cache-iter (mk-stream-iter stream))
+		    :junk-allowed junk-allowed :fail-error-p nil))
 
 
 
@@ -115,3 +121,30 @@ are allowed only if JUNK-ALLOWED is true."
       t)))
 
 (hint-slime-indentation)
+
+
+
+(defclass esrap-token-iter ()
+  ((token-iter :initform (error "Please, provide underlying caching token iterator")
+	       :initarg :iter)
+   (last-token :initarg :token-to-read)))
+
+(defmethod next-iter ((iter esrap-token-iter) &key (token nil token-p) &allow-other-keys)
+  (with-slots (token-iter last-token) iter
+    (if token-p
+	(setf last-token token)
+	(if (not (slot-boundp iter 'last-token))
+	    (error "Don't know, which token should I parse?")))
+    (handler-case (parse-token-iter last-token token-iter :junk-allowed t :fail-error-p t)
+      (simple-esrap-error (e)
+	(with-slots (reason) e
+	  (error 'stop-iteration reason))))))
+
+
+(defun mk-esrap-token-iter (iter &key (token nil token-p))
+  (apply #'make-instance (append (list 'esrap-token-iter :iter iter)
+				 (if token-p
+				     (list :token-to-read token)))))
+	 
+      
+

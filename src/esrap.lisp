@@ -6,7 +6,17 @@
 
 (in-package :esrap-liquid)
 
-;;; MAIN INTERFACE
+;; Read behaviour of PARSE is different from that of usual reader macros,
+;; so we define custom macro-token reader
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (flet ((the-handler (stream token)
+	   (let ((expression (with-esrap-reader-context
+			       (read stream t nil t))))
+	     `(,cl-read-macro-tokens::the-token ,expression ,@(read-list-old stream token)))))
+    (set-macro-token-reader parse #'the-handler)
+    (set-macro-token-reader parse-token-iter #'the-handler)
+    (set-macro-token-reader parse-stream #'the-handler)))
+
 
 (defmacro! with-tmp-rule ((var expression) &body body)
   `(let ((,var (gensym "TMP-RULE")))
@@ -47,28 +57,6 @@
 are allowed only if JUNK-ALLOWED is true."
   (parse-token-iter expression (mk-esrap-iter-from-string text start end) :junk-allowed junk-allowed))
 
-;; Read behaviour of PARSE is different from that of usual reader macros,
-;; but we want to DEFMACRO!! also capture it, hence define new reader class
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defclass parse-reader-class (cl-read-macro-tokens::tautological-read-macro-token) ())
-  (defmethod read-handler ((obj parse-reader-class) stream token)
-    (let ((expression (with-esrap-reader-context
-                        (read stream t nil t))))
-      `(,(slot-value obj 'cl-read-macro-tokens::name) ,expression ,@(read-list-old stream token))))
-  (setf (gethash 'parse-token-iter cl-read-macro-tokens::*read-macro-tokens-classes*)
-	'parse-reader-class
-        (gethash 'parse-token-iter cl-read-macro-tokens::*read-macro-tokens-instances*)
-	(make-instance 'parse-reader-class
-		       :name 'parse-token-iter))
-  (setf (gethash 'parse cl-read-macro-tokens::*read-macro-tokens-classes*)
-	'parse-reader-class
-        (gethash 'parse cl-read-macro-tokens::*read-macro-tokens-instances*)
-	(make-instance 'parse-reader-class
-		       :name 'parse))
-  (setf (gethash 'parse *read-macro-tokens*)
-        (lambda (stream token)
-          (read-handler (gethash 'parse cl-read-macro-tokens::*read-macro-tokens-instances*)
-                        stream token))))
 
 
 (defun esrap-char-reader (char-reader)

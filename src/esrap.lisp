@@ -65,26 +65,6 @@ are allowed only if JUNK-ALLOWED is true."
 
 
 
-(defun esrap-char-reader (char-reader)
-  (lambda (stream char subchar)
-    `(descend-with-rule 'character ,(funcall char-reader stream char subchar))))
-(defun esrap-string-reader (string-reader)
-  (lambda (stream char)
-    `(descend-with-rule 'string ,(funcall string-reader stream char))))
-(defun esrap-literal-char-reader (char-reader)
-  (lambda (stream token)
-    (with-dispatch-macro-character (#\# #\\ char-reader)
-      (car (read-list-old stream token)))))
-(defun esrap-literal-string-reader (string-reader)
-  (lambda (stream token)
-    (with-macro-character (#\" string-reader)
-      (car (read-list-old stream token)))))
-
-(defun esrap-character-ranges (char-reader)
-  (lambda (stream token)
-    (with-dispatch-macro-character (#\# #\\ char-reader)
-      `(character-ranges ,@(read-list-old stream token)))))
-
 (defmacro! character-ranges (&rest char-specs)
   (macrolet ((fail ()
                `(error "Character range specification is either a character or list of 2 characters, but got ~a."

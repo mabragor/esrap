@@ -15,6 +15,28 @@
 	 (tracing-level
 	   (funcall ,g!-it ,@args)))))
 
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun esrap-char-reader (char-reader)
+    (lambda (stream char subchar)
+      `(descend-with-rule 'character ,(funcall char-reader stream char subchar))))
+  (defun esrap-string-reader (string-reader)
+    (lambda (stream char)
+      `(descend-with-rule 'string ,(funcall string-reader stream char))))
+  (defun esrap-literal-char-reader (char-reader)
+    (lambda (stream token)
+      (with-dispatch-macro-character (#\# #\\ char-reader)
+	(car (read-list-old stream token)))))
+  (defun esrap-literal-string-reader (string-reader)
+    (lambda (stream token)
+      (with-macro-character (#\" string-reader)
+	(car (read-list-old stream token)))))
+
+  (defun esrap-character-ranges (char-reader)
+    (lambda (stream token)
+      (with-dispatch-macro-character (#\# #\\ char-reader)
+	`(character-ranges ,@(read-list-old stream token))))))
+
 (defmacro with-esrap-reader-context (&body body)
   `(let ((char-reader (get-dispatch-macro-character #\# #\\))
           (string-reader (get-macro-character #\")))

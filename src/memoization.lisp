@@ -107,3 +107,20 @@
 		       (incf the-length length)
 		       (if-debug "after setting cache ~a" the-length)
 		       result)))))))
+
+(defun invalidate-cache (pos)
+  (with-slots (start-pos pos-hashtable) *cache*
+    ;; TODO : if it bugs, probably, it was not a good idea to delete
+    ;; the keys from hash WHILE iterating over it
+    (iter (for (res-pos results) in-hashtable pos-hashtable)
+	  (if (>= res-pos pos)
+	      (remhash res-pos pos-hashtable)
+	      (iter (for (key val) in-hashtable results)
+		    (if (failed-parse-p val)
+			;; TODO: more refined strategy then just invalidating all cached errors
+			;; upon invalidation of cache
+			;; somehow only invalidate errors that COULD've been caused by
+			;; tokens after invalidated position
+			(remhash key results)
+			(if (> (+ res-pos (cdr val)) pos)
+			    (remhash key results))))))))

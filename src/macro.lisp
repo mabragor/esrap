@@ -126,7 +126,8 @@
 	  (t thing))))
 
 (defun make-rule-lambda (name args body)
-  (multiple-value-bind (reqs opts rest kwds allow-other-keys auxs kwds-p) (parse-ordinary-lambda-list args)
+  (multiple-value-bind (reqs opts rest kwds allow-other-keys auxs kwds-p)
+      (parse-ordinary-lambda-list args)
     (declare (ignore kwds))
     (if kwds-p (error "&KEY arguments are not supported"))
     (if allow-other-keys (error "&ALLOW-OTHER-KEYS is not supported"))

@@ -74,42 +74,55 @@
 (defun failed-parse-p (e)
   (typep e 'internal-esrap-error))
 
+(defmacro etouq (&body forms)
+  (let ((a (gensym)))
+    `(macrolet ((,a () ,@forms))
+       (,a))))
+
+(defun %with-cached-result (symbol args fun)
+  (etouq
+    (with-gensyms (g!-args g!-position g!-result g!-sym)
+      `(let* ((,g!-sym symbol)
+	      (,g!-args args)
+	      (,g!-position (+ the-position the-length))
+	      (,g!-result (get-cached ,g!-sym ,g!-position ,g!-args *cache*))
+	      (*nonterminal-stack* (cons ,g!-sym *nonterminal-stack*)))
+	 (cond ((eq :left-recursion ,g!-result)
+		(error 'left-recursion
+		       :position ,g!-position
+		       :nonterminal ,g!-sym
+		       :path (reverse *nonterminal-stack*)))
+	       (,g!-result (if-debug "~a (~{~s~^ ~}) ~a ~a: CACHED"
+				     ,g!-sym ,g!-args ,g!-position ,g!-result)
+			   (print-iter-state the-iter)
+			   (if (failed-parse-p ,g!-result)
+			       (error ,g!-result)
+			       (progn (incf the-length (cdr ,g!-result))
+				      (fast-forward the-iter (cdr ,g!-result))
+				      (car ,g!-result))))
+	       (t
+		(if-debug "~a (~{~s~^ ~}) ~a ~a: NEW" ,g!-sym ,g!-args ,g!-position ,g!-result)
+		(print-iter-state the-iter)
+		;; First mark this pair with :LEFT-RECURSION to detect left-recursion,
+		;; then compute the result and cache that.
+		(setf (get-cached ,g!-sym ,g!-position ,g!-args *cache*) :left-recursion)
+		(multiple-value-bind (result length)
+		    (handler-case (funcall fun)
+		      (internal-esrap-error (e) (values e :error)))
+		  ;; (if-debug "after evaluation anew ~a ~a" length the-length)
+		  ;; LENGTH is non-NIL only for successful parses
+		  (cond ((eq :error length) (setf (get-cached ,g!-sym ,g!-position ,g!-args *cache*)
+						  result)
+			 (error result))
+			((null length) (error "For some reason, length is NIL in memoization"))
+			(t (setf (get-cached ,g!-sym ,g!-position ,g!-args *cache*)
+				 (cons result length))
+			   (incf the-length length)
+			   (if-debug "after setting cache ~a" the-length)
+			   result)))))))))
+
 (defmacro with-cached-result ((symbol &rest args) &body forms)
-  (with-gensyms (g!-args g!-position g!-result)
-    `(let* ((,g!-args (list ,@args))
-	    (,g!-position (+ the-position the-length))
-	    (,g!-result (get-cached ',symbol ,g!-position ,g!-args *cache*))
-	    (*nonterminal-stack* (cons ',symbol *nonterminal-stack*)))
-       (cond ((eq :left-recursion ,g!-result)
-	      (error 'left-recursion
-		     :position ,g!-position
-		     :nonterminal ',symbol
-		     :path (reverse *nonterminal-stack*)))
-	     (,g!-result (if-debug "~a (~{~s~^ ~}) ~a ~a: CACHED" ',symbol ,g!-args ,g!-position ,g!-result)
-			 (print-iter-state the-iter)
-			 (if (failed-parse-p ,g!-result)
-			     (error ,g!-result)
-			     (progn (incf the-length (cdr ,g!-result))
-				    (fast-forward the-iter (cdr ,g!-result))
-				    (car ,g!-result))))
-	     (t
-	      (if-debug "~a (~{~s~^ ~}) ~a ~a: NEW" ',symbol ,g!-args ,g!-position ,g!-result)
-	      (print-iter-state the-iter)
-	      ;; First mark this pair with :LEFT-RECURSION to detect left-recursion,
-	      ;; then compute the result and cache that.
-	      (setf (get-cached ',symbol ,g!-position ,g!-args *cache*) :left-recursion)
-	      (multiple-value-bind (result length)
-		  (handler-case (the-position-boundary
-				 (values (progn ,@forms) the-length))
-		    (internal-esrap-error (e) (values e :error)))
-		;; (if-debug "after evaluation anew ~a ~a" length the-length)
-		;; LENGTH is non-NIL only for successful parses
-		(cond ((eq :error length) (setf (get-cached ',symbol ,g!-position ,g!-args *cache*)
-						result)
-		       (error result))
-		      ((null length) (error "For some reason, length is NIL in memoization"))
-		      (t (setf (get-cached ',symbol ,g!-position ,g!-args *cache*)
-			       (cons result length))
-			 (incf the-length length)
-			 (if-debug "after setting cache ~a" the-length)
-			 result))))))))
+  (let ((fun `(lambda ()
+		(the-position-boundary
+		  (values (progn ,@forms) the-length)))))
+    `(%with-cached-result ',symbol (list ,@args) ,fun)))

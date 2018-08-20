@@ -34,6 +34,10 @@
       `(format t ,(join "" "~a" format-str "~%")
 	       (make-string *tracing-indent* :initial-element #\space)
 	       ,@args)))
+
+(defmacro if-debug-code (body)
+  (if *debug*
+      body))
       
 
 (defun if-debug-fun (format-str &rest args)

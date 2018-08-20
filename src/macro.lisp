@@ -10,19 +10,29 @@
 
 (defvar *rule-stack* nil)
 
+#+nil
 (defmacro descend-with-rule (o!-sym &rest args)
   (with-gensyms (g!-it g!-got)
     (once-only (o!-sym)
       `(multiple-value-bind (,g!-it ,g!-got) (gethash ,o!-sym *rules*)
-	 (if (not ,g!-got)
-	     (error "Undefined rule: ~s" ,o!-sym)
+	 (if ,g!-got
 	     (let ((*rule-stack* (cons ,o!-sym *rule-stack*)))
 	       (tracing-level
-		 (funcall ,g!-it ,@args))))))))
+		 (funcall ,g!-it ,@args)))
+	     (error "Undefined rule: ~s" ,o!-sym)
+	     )))))
+
+(defun descend-with-rule (name &rest args)
+  (multiple-value-bind (it got) (gethash name *rules*)
+    (if got
+	(let ((*rule-stack* (cons name *rule-stack*)))
+	  (tracing-level
+	    (apply it args)))
+	(error "Undefined rule: ~s" name))))
 
 (defmacro the-position-boundary (&body body)
-  `(let* ((the-position (+ the-position the-length))
-	  (the-length 0))
+  `(let ((the-position (+ the-position the-length))
+	 (the-length 0))
      ,@body))
 
 (defparameter *cap-stash* nil
@@ -36,21 +46,23 @@
      ,@body))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun %propagate-cap-stash-upwards-meat (up-var down-var)
+      (iter (for (key . val) in (car down-var))
+	    ;; (format t "Propagating ~a ~a ... " key val)
+	    (let ((it (assoc key (car up-var))))
+	      (if it
+		  (progn ;; (format t "update old~%")
+		    (setf (cdr it) val))
+		  (progn ;; (format t "create new~%")
+		    (push (cons key val) (car up-var)))))))
+  (defun %propagate-cap-stash-upwards-meat-nil (up-var down-var)
+    (progn (%propagate-cap-stash-upwards-meat up-var down-var) nil))
+  
   (defun propagate-cap-stash-upwards (up-var down-var body)
-    (with-gensyms (g!-vals g!-it)
-      (let ((meat `(iter (for (key . val) in (car ,down-var))
-			 ;; (format t "Propagating ~a ~a ... " key val)
-			 (let ((,g!-it (assoc key (car ,up-var))))
-			   (if ,g!-it
-			       (progn ;; (format t "update old~%")
-				 (setf (cdr ,g!-it) val))
-			       (progn ;; (format t "create new~%")
-				 (push (cons key val) (car ,up-var))))))))
-	(if (not body)
-	    `(progn ,meat nil)
-	    `(let ((,g!-vals (multiple-value-list (progn ,@body))))
-	       ,meat
-	       (values-list ,g!-vals)))))))
+    (if (not body)
+	`(%propagate-cap-stash-upwards-meat-nil ,up-var ,down-var)	
+	`(multiple-value-prog1 (progn ,@body)
+	   (%propagate-cap-stash-upwards-meat ,up-var ,down-var)))))
 
 (defmacro with-sub-cap-stash (&body body)
   `(with-fresh-cap-stash
@@ -125,20 +137,29 @@
 	      ,@body)))))))
 
 
+(defun %set-rule (name lambda)
+  (setf (gethash name *rules*)
+	lambda))
 
 (defmacro %defrule (name args &body body)
   (if-debug-fun "I'm starting to actually expand ~a!" name)
   ;; TODO: bug - C!-vars values are kept between different execution of a rule!
-  `(setf (gethash ',name *rules*)
-	 ,(make-rule-lambda name args body)))
+  `(%set-rule ',name
+	      ,(make-rule-lambda name args body)))
+
+(defun %set-sensitivity-t (name)
+  (setf (gethash name *rule-context-sensitivity*) t))
 
 (defmacro defrule (name args &body body)
   `(progn (%defrule ,name ,args ,@body)
-	  (setf (gethash ',name *rule-context-sensitivity*) t)))
+	  (%set-sensitivity-t ',name)))
+
+(defun %set-sensitivity-nil (name)
+  (setf (gethash name *rule-context-sensitivity*) nil))
 
 (defmacro def-nocontext-rule (name args &body body)
   `(progn (%defrule ,name ,args ,@body)
-	  (setf (gethash ',name *rule-context-sensitivity*) nil)))
+	  (%set-sensitivity-nil ',name)))
 
 
 (defmacro make-result (result &optional (length 0) beginning)
@@ -166,7 +187,8 @@
 			      (print-iter-state)
 			      (with-saved-iter-state (the-iter)
 				(handler-case (return-from ,g!-ordered-choice
-						(let ((res (with-sub-cap-stash ,(maybe-wrap-in-descent clause))))
+						(let ((res (with-sub-cap-stash
+							     ,(maybe-wrap-in-descent clause))))
 						  ;; (if-debug "|| pre-succeeding")
 						  (values res the-length)))
 				  (internal-esrap-error (e)

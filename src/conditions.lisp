@@ -21,13 +21,13 @@
   (if *debug*
       `(let ((*tracing-indent* 0))
 	 ,@body)
-      `(progn ,@body)))
+      (cons 'progn body)))
 
 (defmacro tracing-level (&body body)
   (if *debug*
       `(let ((*tracing-indent* (+ *tracing-indent* 4)))
 	 ,@body)
-      `(progn ,@body)))
+      (cons 'progn body)))
       
 (defmacro if-debug (format-str &rest args)
   (if *debug*

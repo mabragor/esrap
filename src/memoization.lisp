@@ -7,8 +7,8 @@
 (in-package :esrap-liquid)
 
 (defparameter contexts nil)
-(defmacro register-context (context-sym)
-  `(push ',context-sym contexts))
+(defun register-context (context-sym)
+  (push context-sym contexts))
 
 (defvar *cache*)
 

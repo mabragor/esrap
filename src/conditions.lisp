@@ -120,21 +120,21 @@ Specific reason: ~a~%" rule-stack position text reason)))
          :position position
 	 :reason reason))
 
-(defmacro fail-parse-format (&optional (reason "No particular reason.") &rest args)
-  `(progn (when (and positive-mood
-		     (>= the-position max-failed-position))
-	    (setf max-failed-position the-position
-		  max-rule-stack *rule-stack*
-		  max-message (apply #'format `(nil ,,reason ,,@args))))
-	  (error 'internal-esrap-error)))
+(defun fail-parse-format (&optional (reason "No particular reason.") &rest args)
+  (progn (when (and positive-mood
+		    (>= the-position max-failed-position))
+	   (setf max-failed-position the-position
+		 max-rule-stack *rule-stack*
+		 max-message (apply #'format `(nil ,reason ,@args))))
+	 (error 'internal-esrap-error)))
 
-(defmacro fail-parse (&optional (reason "No particular reason."))
-  `(progn (when (and positive-mood
-		     (>= the-position max-failed-position))
-	    (setf max-failed-position the-position
-		  max-rule-stack *rule-stack*
-		  max-message ,reason))
-	  (error 'internal-esrap-error)))
+(defun fail-parse (&optional (reason "No particular reason."))
+  (progn (when (and positive-mood
+		    (>= the-position max-failed-position))
+	   (setf max-failed-position the-position
+		 max-rule-stack *rule-stack*
+		 max-message reason))
+	 (error 'internal-esrap-error)))
 
 (define-condition left-recursion (esrap-error)
   ((nonterminal :initarg :nonterminal :initform nil :reader left-recursion-nonterminal)

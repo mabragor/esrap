@@ -56,7 +56,7 @@
   `(with-fresh-cap-stash
      ,(propagate-cap-stash-upwards 'up-cap-stash '*cap-stash* body)))
 
-(defmacro %wrap-with-esrap-macrolets-v (thing args)
+(defun %wrap-with-esrap-macrolets-v (thing args)
   (cond ((characterp thing) (if args
 				(error "Descent with character has extra argument, &
                                                                   but it shouldn't")
@@ -67,21 +67,21 @@
 			     `(descend-with-rule 'string ,thing)))
 	((symbolp thing) `(descend-with-rule ',thing ,@args))
 	(t (error "Don't know how to descend with this : ~a" thing))))
-(defmacro %wrap-with-esrap-macrolets-cap (key val)
+(defun %wrap-with-esrap-macrolets-cap (key val)
   (let ((key (intern (string key) "KEYWORD")))
     (with-gensyms (g!-it)
       `(let ((,g!-it (assoc ,key (car *cap-stash*))))
 	 (if ,g!-it
 	     (setf (cdr ,g!-it) ,(maybe-wrap-in-descent val))
 	     (push (cons ,key ,(maybe-wrap-in-descent val)) (car *cap-stash*)))))))
-(defmacro %wrap-with-esrap-macrolets-recap (key)
+(defun %wrap-with-esrap-macrolets-recap (key)
   (let ((key (intern (string key) "KEYWORD")))
     (with-gensyms (g!-it)
       `(let ((,g!-it (assoc ,key (car *cap-stash*))))
 	 (if ,g!-it
 	     (cdr ,g!-it)
 	     (fail-parse-format "Key ~a is not captured (unbound)." ,key))))))
-(defmacro %wrap-with-esrap-macrolets-recap? (key)
+(defun %wrap-with-esrap-macrolets-recap? (key)
   `(handler-case (recap ,key)
      (internal-esrap-error () nil)))
 

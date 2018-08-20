@@ -79,20 +79,30 @@
 			     `(descend-with-rule 'string ,thing)))
 	((symbolp thing) `(descend-with-rule ',thing ,@args))
 	(t (error "Don't know how to descend with this : ~a" thing))))
+
+;;;cap
+(defun %%cap (key val)
+  (let ((it (assoc key (car *cap-stash*))))
+    (if it
+	(setf (cdr it)
+	      val)
+	(push (cons key val)
+	      (car *cap-stash*)))))
 (defun %wrap-with-esrap-macrolets-cap (key val)
   (let ((key (intern (string key) "KEYWORD")))
-    (with-gensyms (g!-it)
-      `(let ((,g!-it (assoc ,key (car *cap-stash*))))
-	 (if ,g!-it
-	     (setf (cdr ,g!-it) ,(maybe-wrap-in-descent val))
-	     (push (cons ,key ,(maybe-wrap-in-descent val)) (car *cap-stash*)))))))
+    `(%%cap ,key ,(maybe-wrap-in-descent val))))
+
+;;;recap
+(defun %%recap (key)
+  (let ((it (assoc key (car *cap-stash*))))
+    (if it
+	(cdr it)
+	(fail-parse-format "Key ~a is not captured (unbound)." key))))
 (defun %wrap-with-esrap-macrolets-recap (key)
   (let ((key (intern (string key) "KEYWORD")))
-    (with-gensyms (g!-it)
-      `(let ((,g!-it (assoc ,key (car *cap-stash*))))
-	 (if ,g!-it
-	     (cdr ,g!-it)
-	     (fail-parse-format "Key ~a is not captured (unbound)." ,key))))))
+    `(%%recap ,key)))
+
+;;;recap?
 (defun %wrap-with-esrap-macrolets-recap? (key)
   `(handler-case (recap ,key)
      (internal-esrap-error () nil)))

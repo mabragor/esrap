@@ -52,7 +52,8 @@
 			  `(let (;;same as with-*-rules
 				 (esrap-liquid::*rules* ,',(s #?"$(symbol)-rules"))
 				 ;;same as with-*-contexts
-				 (esrap-liquid::contexts ,',(s #?"$(symbol)-contexts"))) 
+				 ;;(esrap-liquid::contexts ,',(s #?"$(symbol)-contexts"))
+				 ) 
 			     (,',fun ,symbol ,args ,@body)))))
 		 (if mainly-non-context
 		     `(progn ,(umm #?"define-$(symbol)-rule" 'def-nocontext-rule)

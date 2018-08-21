@@ -11,15 +11,28 @@
 (defmacro with-tmp-rule ((var expression) &body body)
   (with-gensyms (g!-expr g!-rule)
     `(let ((,g!-expr ,expression))
-       (unwind-protect (progn (setf (gethash ',g!-rule *rules*)
-				    (funcall (compile nil `(lambda ()
-							     ,(make-rule-lambda
-							       'esrap-tmp-rule ()
-							       (list (if (symbolp ,g!-expr)
-									 `(v ,,g!-expr)
-									 ,g!-expr)))))))
-			      (let ((,var ',g!-rule))
-				,@body))
+       ;;FIXME::what is going on here? why is compile being called?
+       (unwind-protect
+	    (progn (setf (gethash ',g!-rule *rules*)
+			 (funcall
+			  (compile
+			   nil
+			   `(lambda ()
+			      ,(multiple-value-bind
+				(name defun)
+				(make-rule-lambda
+				 'esrap-tmp-rule ()
+				 (list (if (symbolp ,g!-expr)
+					   `(v ,,g!-expr)
+					   ,g!-expr)))
+				;;FIXME::fragile hack based on position of defun in defrule
+				(progn
+				  (setf (first (third defun)) 'lambda)
+				  (setf (cdr (third defun))
+					(cddr (third defun))))
+				defun)))))
+		   (let ((,var ',g!-rule))
+		     ,@body))
 	 (remhash ',g!-rule *rules*)))))
 
 (defun iter-last-text (position)

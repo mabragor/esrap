@@ -133,43 +133,65 @@
     (if allow-other-keys (error "&ALLOW-OTHER-KEYS is not supported"))
     (if auxs (error "&AUX variables are not supported, use LET"))
     (multiple-value-bind (body decls doc) (parse-body body :documentation t)
-      (wrap-with-esrap-macrolets
-       `(named-lambda ,(intern #?"ESRAP-$((string name))") (,@args)
-	  ,@(if doc `(,doc))
-	  ,@decls
-	  (with-fresh-cap-stash
-	    (with-cached-result (,name ,@reqs
-				       ,@(if rest
-					     `(,rest)
-					     (iter (for (opt-name opt-default opt-supplied-p) in opts)
-						   (collect opt-name)
-						   (if opt-supplied-p
-						       (collect opt-supplied-p)))))
-	      ,@body)))))))
+      (let ((defun-name (intern #?"GENERATED-ESRAP-$((string name))")))
+	(values
+	 defun-name
+	 (wrap-with-esrap-macrolets
+	  `(defun ,defun-name (,@args)
+	     ,@(if doc `(,doc))
+	     ,@decls
+	     (with-fresh-cap-stash
+	       (with-cached-result
+		   (,name ,@reqs
+			  ,@(if rest
+				`(,rest)
+				(iter (for (opt-name opt-default opt-supplied-p) in opts)
+				      (collect opt-name)
+				      (if opt-supplied-p
+					  (collect opt-supplied-p)))))
+		 ,@body)))))))))
 
 
 (defun %set-rule (name lambda)
   (setf (gethash name *rules*)
 	lambda))
+(defun %set-sensitivity-t (name)
+  (setf (gethash name *rule-context-sensitivity*) t))
+(defun %set-sensitivity-nil (name)
+  ;;FIXME::shouldn't this be wrapped the same way esrap-liquid::*rules* is wrapped?
+  (setf (gethash name *rule-context-sensitivity*) nil))
 
+;;;;API that depends on dynamic value of *rules*
 (defmacro %defrule (name args &body body)
   (if-debug-fun "I'm starting to actually expand ~a!" name)
   ;; TODO: bug - C!-vars values are kept between different execution of a rule!
-  `(%set-rule ',name
-	      ,(make-rule-lambda name args body)))
-
-(defun %set-sensitivity-t (name)
-  (setf (gethash name *rule-context-sensitivity*) t))
-
+  (multiple-value-bind (fun-name def) (make-rule-lambda name args body)
+    `(progn
+       ,def
+       (%set-rule ',name
+		  ',fun-name))))
 (defmacro defrule (name args &body body)
   `(progn (%defrule ,name ,args ,@body)
 	  (%set-sensitivity-t ',name)))
-
-(defun %set-sensitivity-nil (name)
-  (setf (gethash name *rule-context-sensitivity*) nil))
-
 (defmacro def-nocontext-rule (name args &body body)
   `(progn (%defrule ,name ,args ,@body)
+	  (%set-sensitivity-nil ',name)))
+
+;;;;;API that does not depend on dynamic value of rules, its explicit.
+(defmacro %defrule2 (name args rules &body body)
+  (if-debug-fun "I'm starting to actually expand ~a!" name)
+  ;; TODO: bug - C!-vars values are kept between different execution of a rule!
+  (multiple-value-bind (fun-name def) (make-rule-lambda name args body)
+    `(progn
+       ,def
+       (let ((esrap-liquid::*rules* ,rules))
+	 (%set-rule ',name
+		    ',fun-name)))))
+(defmacro defrule2 (name args rules &body body)
+  `(progn (%defrule2 ,name ,args ,rules ,@body)
+	  (%set-sensitivity-t ',name)))
+(defmacro def-nocontext-rule2 (name args rules &body body)
+  `(progn (%defrule2 ,name ,args ,rules ,@body)
 	  (%set-sensitivity-nil ',name)))
 
 

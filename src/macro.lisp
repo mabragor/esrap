@@ -186,13 +186,14 @@
 
 
 (defmacro || (&rest clauses)
-  (with-gensyms (g!-result g!-the-length g!-ordered-choice g!-parse-errors)
+  (with-gensyms (g!-result g!-the-length g!-ordered-choice ;;g!-parse-errors
+			   )
     `(tracing-level
        (if-debug "||")
        (multiple-value-bind (,g!-result ,g!-the-length)
 	   ;; All this tricky business with BLOCK just for automatic LENGTH tracking.
 	   (block ,g!-ordered-choice
-	     (let (,g!-parse-errors)
+	     (progn ;;let (,g!-parse-errors)
 	       ,@(mapcar (lambda (clause)
 			   `(the-position-boundary
 			      (print-iter-state)
@@ -204,7 +205,8 @@
 						  (values res the-length)))
 				  (internal-esrap-error (e)
 				    (restore-iter-state)
-				    (push e ,g!-parse-errors))))))
+				    ;;(push e ,g!-parse-errors)
+				    )))))
 			 clauses)
 	       (if-debug "|| before failing P ~a L ~a" the-position the-length)
 	       (fail-parse "Optional parse failed")))

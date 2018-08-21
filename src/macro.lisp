@@ -22,12 +22,15 @@
 	     (error "Undefined rule: ~s" ,o!-sym)
 	     )))))
 
+(defun apply-rule-fun (fun &optional (args nil))
+  (tracing-level
+    (apply fun args)))
+
 (defun descend-with-rule (name &rest args)
   (multiple-value-bind (it got) (gethash name *rules*)
     (if got
 	(let ((*rule-stack* (cons name *rule-stack*)))
-	  (tracing-level
-	    (apply it args)))
+	  (apply-rule-fun it args))
 	(error "Undefined rule: ~s" name))))
 
 (defmacro the-position-boundary (&body body)
@@ -124,6 +127,19 @@
 	  ((stringp thing) `(descend-with-rule 'string ,thing))
 	  ((symbolp thing) `(descend-with-rule ',thing))
 	  (t thing))))
+
+(defun make-anonymous-rule-lambda (name args body)
+  (multiple-value-bind
+	(name defun)
+      (make-rule-lambda
+       name args body)
+    (declare (ignorable name))
+    ;;FIXME::fragile hack based on position of defun in defrule
+    (progn
+      (setf (first (third defun)) 'lambda)
+      (setf (cdr (third defun))
+	    (cddr (third defun))))
+    defun))
 
 (defun make-rule-lambda (name args body)
   (multiple-value-bind (reqs opts rest kwds allow-other-keys auxs kwds-p)

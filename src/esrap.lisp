@@ -18,19 +18,11 @@
 			  (compile
 			   nil
 			   `(lambda ()
-			      ,(multiple-value-bind
-				(name defun)
-				(make-rule-lambda
-				 'esrap-tmp-rule ()
-				 (list (if (symbolp ,g!-expr)
-					   `(v ,,g!-expr)
-					   ,g!-expr)))
-				;;FIXME::fragile hack based on position of defun in defrule
-				(progn
-				  (setf (first (third defun)) 'lambda)
-				  (setf (cdr (third defun))
-					(cddr (third defun))))
-				defun)))))
+			      ,(make-anonymous-rule-lambda
+				'esrap-tmp-rule ()
+				(list (if (symbolp ,g!-expr)
+					  `(v ,,g!-expr)
+					  ,g!-expr)))))))
 		   (let ((,var ',g!-rule))
 		     ,@body))
 	 (remhash ',g!-rule *rules*)))))
@@ -69,25 +61,25 @@
 	(max-message "")
 	(positive-mood t))
     (tracing-init
-      (with-tmp-rule (tmp-rule expression)
-	(let ((result (handler-case (descend-with-rule tmp-rule)
-			(internal-esrap-error ()
-			  (if junk-allowed
-			      (values nil 0)
-			      (simple-esrap-error
-			       (iter-last-text max-failed-position)
-			       max-rule-stack max-failed-position max-message))))))
-	  (if-debug "after tmp-rule")
-	  (when (not junk-allowed)
-	    (handler-case (descend-with-rule 'eof)
-	      (internal-esrap-error ()
-		(simple-esrap-error
-		 (iter-last-text (+ the-position the-length))
-		 nil (+ the-position the-length) "Didn't make it to the end of the text"))))
-	  (values result the-length))))))
+      (let ((result (handler-case (descend-with-rule expression)
+		      (internal-esrap-error ()
+			(if junk-allowed
+			    (values nil 0)
+			    (simple-esrap-error
+			     (iter-last-text max-failed-position)
+			     max-rule-stack max-failed-position max-message))))))
+	(if-debug "after tmp-rule")
+	(when (not junk-allowed)
+	  (handler-case (descend-with-rule 'eof)
+	    (internal-esrap-error ()
+	      (simple-esrap-error
+	       (iter-last-text (+ the-position the-length))
+	       nil (+ the-position the-length) "Didn't make it to the end of the text"))))
+	(values result the-length)))))
 
 (defun parse-token-iter (expression token-iter &key junk-allowed)
-  (%parse-token-iter expression (mk-cache-iter token-iter) :junk-allowed junk-allowed))
+  (with-tmp-rule (expression expression)
+    (%parse-token-iter expression (mk-cache-iter token-iter) :junk-allowed junk-allowed)))
 
 (defun mk-esrap-iter-from-string (str start end)
   (mk-string-iter (subseq str start end)))

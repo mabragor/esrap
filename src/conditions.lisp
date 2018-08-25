@@ -28,14 +28,14 @@
 
 (defmacro tracing-level (&body body)
   (if *debug-compile*
-      `(let ((*tracing-indent* (+ *tracing-indent* 4)))
+      `(let ((*tracing-indent* (+ *tracing-indent* 1)))
 	 ,@body)
       (cons 'progn body)))
 
 (defun %if-debug (format-str args)
   (if *debug*
       (apply #'format t (join "" "~a" format-str "~%")
-	     (make-string *tracing-indent* :initial-element #\space)
+	     (make-string (* 4 *tracing-indent*) :initial-element #\space)
 	     args)))
 (defmacro if-debug (format-str &rest args)
   (if *debug-compile*
@@ -45,7 +45,7 @@
 (defun %if-debug-fun (format-str args)
   (if *debug*
       (apply #'format (append (list t (join "" "~a" format-str "~%")
-				    (make-string *tracing-indent* :initial-element #\space))
+				    (make-string (* 4 *tracing-indent*) :initial-element #\space))
 			      args))))
 (defmacro if-debug-fun (format-str &rest args)
   (if *debug-compile*

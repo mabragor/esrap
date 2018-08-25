@@ -242,6 +242,7 @@
 						  ;; (if-debug "|| pre-succeeding")
 						  (values res the-length)))
 				  (internal-esrap-error (e)
+				    (declare (ignorable e))
 				    (restore-iter-state)
 				    ;;(push e ,g!-parse-errors)
 				    )))))

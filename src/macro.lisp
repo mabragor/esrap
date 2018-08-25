@@ -42,12 +42,17 @@
 		   (descend))
 		 (descend))))
     (if (and *debug-trace-rules*
-	     *traced*)
-	(progn
-	  (format t "~&~a(~a"
-		  (make-string *tracing-indent* :initial-element #\space)
-		  name)
-	  (multiple-value-prog1 (dispatch)
+	     *traced*)  
+	(let ((success nil))
+	  (format t "~&")
+	  (format t "~a" (make-string *tracing-indent* :initial-element #\space))
+	  (format t "(")
+	  (let ((*print-case* :downcase))
+	    (format t "~a" name))
+	  (unwind-protect (multiple-value-prog1 (dispatch)
+			    (setf success t))
+	    (when (not success)
+	      (format t " ***"))
 	    (format t ")")))
 	(dispatch))))
 

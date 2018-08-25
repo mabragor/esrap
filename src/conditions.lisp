@@ -11,7 +11,7 @@
   (defparameter *debug-compile* t
     "If non-nil, compile with debug information. Set *debug* to non-nil to print traces and other info. If nil, changing *debug* does nothing.")
   )
-(defparameter *debug* t)
+(defparameter *debug* nil)
 
 (defparameter *tracing-indent* 0)
 
@@ -34,7 +34,7 @@
 
 (defun %if-debug (format-str args)
   (if *debug*
-      (apply #'format t ,(join "" "~a" format-str "~%")
+      (apply #'format t (join "" "~a" format-str "~%")
 	     (make-string *tracing-indent* :initial-element #\space)
 	     args)))
 (defmacro if-debug (format-str &rest args)

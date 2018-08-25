@@ -30,21 +30,26 @@
 (defparameter *debug-trace-rules* nil)
 (defparameter *not-tracing* (make-hash-table))
 (defun descend-with-rule (name &rest args)
-  (flet ((descend ()
-	   (multiple-value-bind (it got) (gethash name *rules*)
-	     (if got
-		 (let ((*rule-stack* (cons name *rule-stack*)))
-		   (apply-rule-fun it args))
-		 (error "Undefined rule: ~s" name)))))
-    (when *debug-trace-rules*
-      (when *traced*
-	(format t "~a~a~%"
-		(make-string *tracing-indent* :initial-element #\space)
-		name)))
-    (if (gethash name *not-tracing*)
-	(let ((*traced* nil))
-	  (descend))
-	(descend))))
+  (labels ((descend ()
+	     (multiple-value-bind (it got) (gethash name *rules*)
+	       (if got
+		   (let ((*rule-stack* (cons name *rule-stack*)))
+		     (apply-rule-fun it args))
+		   (error "Undefined rule: ~s" name))))
+	   (dispatch ()
+	     (if (gethash name *not-tracing*)
+		 (let ((*traced* nil))
+		   (descend))
+		 (descend))))
+    (if (and *debug-trace-rules*
+	     *traced*)
+	(progn
+	  (format t "~&~a(~a"
+		  (make-string *tracing-indent* :initial-element #\space)
+		  name)
+	  (multiple-value-prog1 (dispatch)
+	    (format t ")")))
+	(dispatch))))
 
 (defmacro the-position-boundary (&body body)
   `(let ((the-position (+ the-position the-length))

@@ -29,12 +29,7 @@
 (defmacro tracing-level (&body body)
   (if *debug-compile*
       `(let ((*tracing-indent* (+ *tracing-indent* 4)))
-	 (if *debug*
-	     (write-char #\( ))
-	 (multiple-value-prog1
-	     ,@body
-	   (if *debug*
-	       (write-char #\)))))
+	 ,@body)
       (cons 'progn body)))
 
 (defun %if-debug (format-str args)

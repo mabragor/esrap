@@ -8,7 +8,10 @@
 (in-package :esrap-liquid)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *debug* nil))
+  (defparameter *debug-compile* t
+    "If non-nil, compile with debug information. Set *debug* to non-nil to print traces and other info. If nil, changing *debug* does nothing.")
+  )
+(defparameter *debug* t)
 
 (defparameter *tracing-indent* 0)
 
@@ -18,29 +21,37 @@
   (joinl joinee lst))
 
 (defmacro tracing-init (&body body)
-  (if *debug*
+  (if *debug-compile*
       `(let ((*tracing-indent* 0))
 	 ,@body)
       (cons 'progn body)))
 
 (defmacro tracing-level (&body body)
-  (if *debug*
+  (if *debug-compile*
       `(let ((*tracing-indent* (+ *tracing-indent* 4)))
 	 ,@body)
       (cons 'progn body)))
-      
-(defmacro if-debug (format-str &rest args)
-  (if *debug*
-      `(format t ,(join "" "~a" format-str "~%")
-	       (make-string *tracing-indent* :initial-element #\space)
-	       ,@args)))
 
-(defun if-debug-fun (format-str &rest args)
+(defun %if-debug (format-str args)
+  (if *debug*
+      (apply #'format t ,(join "" "~a" format-str "~%")
+	     (make-string *tracing-indent* :initial-element #\space)
+	     args)))
+(defmacro if-debug (format-str &rest args)
+  (if *debug-compile*
+      `(%if-debug ,format-str
+		  ,(cons 'list args))))
+
+(defun %if-debug-fun (format-str args)
   (if *debug*
       (apply #'format (append (list t (join "" "~a" format-str "~%")
 				    (make-string *tracing-indent* :initial-element #\space))
 			      args))))
-  
+(defmacro if-debug-fun (format-str &rest args)
+  (if *debug-compile*
+      `(%if-debug-fun ,format-str
+		      ,(cons 'list args))))
+
 
 (define-condition esrap-error (parse-error)
   ((text :initarg :text :initform nil :reader esrap-error-text)

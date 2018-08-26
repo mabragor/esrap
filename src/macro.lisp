@@ -49,6 +49,7 @@
 	  (format t "(")
 	  (let ((*print-case* :downcase))
 	    (format t "~a" name))
+	  (format t ": ~s" the-position)
 	  (unwind-protect (multiple-value-prog1 (dispatch)
 			    (setf success t))
 	    (when (not success)

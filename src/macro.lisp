@@ -43,18 +43,24 @@
 		 (descend))))
     (if (and *debug-trace-rules*
 	     *traced*)  
-	(let ((success nil))
+	(let ((success nil)
+	      (indent (make-string *tracing-indent* :initial-element #\space)))
 	  (format t "~&")
-	  (format t "~a" (make-string *tracing-indent* :initial-element #\space))
+	  (format t "~a" indent)
 	  (format t "(")
 	  (let ((*print-case* :downcase))
 	    (format t "~a" name))
 	  (format t ": ~s" the-position)
-	  (unwind-protect (multiple-value-prog1 (dispatch)
-			    (setf success t))
-	    (when (not success)
-	      (format t " ***"))
-	    (format t ")")))
+	  (let ((values nil))
+	    (unwind-protect (progn (setf values (multiple-value-list (dispatch)))
+				   (setf success t))
+	      (if (not success)
+		  (format t " ***")
+		  (progn
+		    (format t "~&~a" indent)
+		    (format t "SUCCESS:: ~a ~a" name values)))
+	      (format t ")"))
+	    (values-list values)))
 	(dispatch))))
 
 (defmacro the-position-boundary (&body body)
@@ -154,16 +160,16 @@
 
 (defun make-anonymous-rule-lambda (name args body)
   (multiple-value-bind
-	(name defun)
+	(name defun the-defun)
       (make-rule-lambda
        name args body)
-    (declare (ignorable name))
+    (declare (ignorable name defun))
     ;;FIXME::fragile hack based on position of defun in defrule
     (progn
-      (setf (first (third defun)) 'lambda)
-      (setf (cdr (third defun))
-	    (cddr (third defun))))
-    defun))
+      (setf (first (third the-defun)) 'lambda)
+      (setf (cdr (third the-defun))
+	    (cddr (third the-defun))))
+    the-defun))
 
 (defun make-rule-lambda (name args body)
   (multiple-value-bind (reqs opts rest kwds allow-other-keys auxs kwds-p)
@@ -173,23 +179,28 @@
     (if allow-other-keys (error "&ALLOW-OTHER-KEYS is not supported"))
     (if auxs (error "&AUX variables are not supported, use LET"))
     (multiple-value-bind (body decls doc) (parse-body body :documentation t)
-      (let ((defun-name (intern #?"GENERATED-ESRAP-$((string name))")))
+      (let* ((defun-name (intern #?"GENERATED-ESRAP-$((string name))"))
+	     (the-defun
+	      (wrap-with-esrap-macrolets
+	       `(defun ,defun-name (,@args)
+		  ,@(if doc `(,doc))
+		  ,@decls
+		  
+	;;	  (setf ,name ',name) ;;;;FIXME:: hack to have slime cross reference variables
+		  (with-fresh-cap-stash
+		    (with-cached-result
+			(,name ,@reqs
+			       ,@(if rest
+				     `(,rest)
+				     (iter (for (opt-name opt-default opt-supplied-p) in opts)
+					   (collect opt-name)
+					   (if opt-supplied-p
+					       (collect opt-supplied-p)))))
+		      ,@body))))))
 	(values
 	 defun-name
-	 (wrap-with-esrap-macrolets
-	  `(defun ,defun-name (,@args)
-	     ,@(if doc `(,doc))
-	     ,@decls
-	     (with-fresh-cap-stash
-	       (with-cached-result
-		   (,name ,@reqs
-			  ,@(if rest
-				`(,rest)
-				(iter (for (opt-name opt-default opt-supplied-p) in opts)
-				      (collect opt-name)
-				      (if opt-supplied-p
-					  (collect opt-supplied-p)))))
-		 ,@body)))))))))
+	 the-defun
+	 the-defun)))))
 
 
 (defun %set-rule (name lambda)

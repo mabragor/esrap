@@ -8,7 +8,10 @@
 (in-package :esrap-liquid)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *debug* nil))
+  (defparameter *debug-compile* t
+    "If non-nil, compile with debug information. Set *debug* to non-nil to print traces and other info. If nil, changing *debug* does nothing.")
+  )
+(defparameter *debug* nil)
 
 (defparameter *tracing-indent* 0)
 
@@ -18,30 +21,37 @@
   (joinl joinee lst))
 
 (defmacro tracing-init (&body body)
-  (if *debug*
+  (if *debug-compile*
       `(let ((*tracing-indent* 0))
 	 ,@body)
-      `(progn ,@body)))
+      (cons 'progn body)))
 
 (defmacro tracing-level (&body body)
-  (if *debug*
-      `(let ((*tracing-indent* (+ *tracing-indent* 4)))
+  (if *debug-compile*
+      `(let ((*tracing-indent* (+ *tracing-indent* 1)))
 	 ,@body)
-      `(progn ,@body)))
-      
-(defmacro if-debug (format-str &rest args)
-  (if *debug*
-      `(format t ,(join "" "~a" format-str "~%")
-	       (make-string *tracing-indent* :initial-element #\space)
-	       ,@args)))
-      
+      (cons 'progn body)))
 
-(defun if-debug-fun (format-str &rest args)
+(defun %if-debug (format-str args)
+  (if *debug*
+      (apply #'format t (join "" "~a" format-str "~%")
+	     (make-string (* 4 *tracing-indent*) :initial-element #\space)
+	     args)))
+(defmacro if-debug (format-str &rest args)
+  (if *debug-compile*
+      `(%if-debug ,format-str
+		  ,(cons 'list args))))
+
+(defun %if-debug-fun (format-str args)
   (if *debug*
       (apply #'format (append (list t (join "" "~a" format-str "~%")
-				    (make-string *tracing-indent* :initial-element #\space))
+				    (make-string (* 4 *tracing-indent*) :initial-element #\space))
 			      args))))
-  
+(defmacro if-debug-fun (format-str &rest args)
+  (if *debug-compile*
+      `(%if-debug-fun ,format-str
+		      ,(cons 'list args))))
+
 
 (define-condition esrap-error (parse-error)
   ((text :initarg :text :initform nil :reader esrap-error-text)
@@ -116,21 +126,21 @@ Specific reason: ~a~%" rule-stack position text reason)))
          :position position
 	 :reason reason))
 
-(defmacro fail-parse-format (&optional (reason "No particular reason.") &rest args)
-  `(progn (when (and positive-mood
-		     (>= the-position max-failed-position))
-	    (setf max-failed-position the-position
-		  max-rule-stack *rule-stack*
-		  max-message (apply #'format `(nil ,,reason ,,@args))))
-	  (error 'internal-esrap-error)))
+(defun fail-parse-format (&optional (reason "No particular reason.") &rest args)
+  (progn (when (and positive-mood
+		    (>= the-position max-failed-position))
+	   (setf max-failed-position the-position
+		 max-rule-stack *rule-stack*
+		 max-message (apply #'format `(nil ,reason ,@args))))
+	 (error 'internal-esrap-error)))
 
-(defmacro fail-parse (&optional (reason "No particular reason."))
-  `(progn (when (and positive-mood
-		     (>= the-position max-failed-position))
-	    (setf max-failed-position the-position
-		  max-rule-stack *rule-stack*
-		  max-message ,reason))
-	  (error 'internal-esrap-error)))
+(defun fail-parse (&optional (reason "No particular reason."))
+  (progn (when (and positive-mood
+		    (>= the-position max-failed-position))
+	   (setf max-failed-position the-position
+		 max-rule-stack *rule-stack*
+		 max-message reason))
+	 (error 'internal-esrap-error)))
 
 (define-condition left-recursion (esrap-error)
   ((nonterminal :initarg :nonterminal :initform nil :reader left-recursion-nonterminal)

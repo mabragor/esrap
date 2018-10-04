@@ -47,23 +47,24 @@
 	  (defmacro ,(s #?"with-$(symbol)-contexts") (&body body)
 	    `(let ((esrap-liquid::contexts ,',(s #?"$(symbol)-contexts")))
 	       ,@body))
-	  ,(if mainly-non-context
-	       `(progn (defmacro ,(s #?"define-$(symbol)-rule") (symbol args &body body)
-			 `(,',(s #?"with-$(symbol)-rules")
-			      (,',(s #?"with-$(symbol)-contexts")
-				  (def-nocontext-rule ,symbol ,args ,@body))))
-		       (defmacro ,(s #?"define-c-$(symbol)-rule") (symbol args &body body)
-			 `(,',(s #?"with-$(symbol)-rules")
-			      (,',(s #?"with-$(symbol)-contexts")
-				  (defrule ,symbol ,args ,@body)))))
-	       `(progn (defmacro ,(s #?"define-$(symbol)-rule") (symbol args &body body)
-			 `(,',(s #?"with-$(symbol)-rules")
-			      (,',(s #?"with-$(symbol)-contexts")
-				  (defrule ,symbol ,args ,@body))))
-		       (defmacro ,(s #?"define-nc-$(symbol)-rule") (symbol args &body body)
-			 `(,',(s #?"with-$(symbol)-rules")
-			      (,',(s #?"with-$(symbol)-contexts")
-				  (def-nocontext-rule ,symbol ,args ,@body))))))
+	  ,(flet ((umm (name fun)
+		       `(defmacro ,(s name) (symbol args &body body)		  
+			  `(,',fun
+			    ,symbol
+			    ,args
+			    ,',(s #?"$(symbol)-rules")
+			    #+nil
+			    (let (;;same as with-*-rules
+				  (esrap-liquid::*rules* )
+				  ;;same as with-*-contexts
+				  ;;(esrap-liquid::contexts ,',(s #?"$(symbol)-contexts"))
+				  ))
+			    ,@body))))
+		 (if mainly-non-context
+		     `(progn ,(umm #?"define-$(symbol)-rule" 'def-nocontext-rule2)
+			     ,(umm #?"define-c-$(symbol)-rule" 'defrule2))
+		     `(progn ,(umm #?"define-$(symbol)-rule" 'defrule2)
+			     ,(umm #?"define-nc-$(symbol)-rule" 'def-nocontext-rule2))))
 	  (defmacro ,(s #?"register-$(symbol)-context")
 	      (context-var &rest plausible-contexts)
 	    (flet ((s (x) (symbolicate (string-upcase x))))

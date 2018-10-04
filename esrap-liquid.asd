@@ -14,7 +14,7 @@
   :version "2.3" ; odd minor version numbers are for unstable versions
   :description "A Packrat / Parsing Grammar / TDPL parser for Common Lisp."
   :licence "GPL"
-  :depends-on (#:alexandria #:iterate #:cl-ppcre #:cl-interpol)
+  :depends-on (#:alexandria #:iterate #:cl-ppcre #:cl-interpol #:trivial-garbage)
   :serial t
   :components ((:module "src"
                         :pathname "src/"

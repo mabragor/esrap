@@ -10,19 +10,62 @@
 
 (defvar *rule-stack* nil)
 
+#+nil
 (defmacro descend-with-rule (o!-sym &rest args)
   (with-gensyms (g!-it g!-got)
     (once-only (o!-sym)
       `(multiple-value-bind (,g!-it ,g!-got) (gethash ,o!-sym *rules*)
-	 (if (not ,g!-got)
-	     (error "Undefined rule: ~s" ,o!-sym)
+	 (if ,g!-got
 	     (let ((*rule-stack* (cons ,o!-sym *rule-stack*)))
 	       (tracing-level
-		 (funcall ,g!-it ,@args))))))))
+		 (funcall ,g!-it ,@args)))
+	     (error "Undefined rule: ~s" ,o!-sym)
+	     )))))
+
+(defun apply-rule-fun (fun &optional (args nil))
+  (tracing-level
+    (apply fun args)))
+
+(defparameter *traced* t)
+(defparameter *debug-trace-rules* nil)
+(defparameter *not-tracing* (make-hash-table))
+(defun descend-with-rule (name &rest args)
+  (labels ((descend ()
+	     (multiple-value-bind (it got) (gethash name *rules*)
+	       (if got
+		   (let ((*rule-stack* (cons name *rule-stack*)))
+		     (apply-rule-fun it args))
+		   (error "Undefined rule: ~s" name))))
+	   (dispatch ()
+	     (if (gethash name *not-tracing*)
+		 (let ((*traced* nil))
+		   (descend))
+		 (descend))))
+    (if (and *debug-trace-rules*
+	     *traced*)  
+	(let ((success nil)
+	      (indent (make-string *tracing-indent* :initial-element #\space)))
+	  (format t "~&")
+	  (format t "~a" indent)
+	  (format t "(")
+	  (let ((*print-case* :downcase))
+	    (format t "~a" name))
+	  (format t ": ~s" the-position)
+	  (let ((values nil))
+	    (unwind-protect (progn (setf values (multiple-value-list (dispatch)))
+				   (setf success t))
+	      (if (not success)
+		  (format t " ***")
+		  (progn
+		    (format t "~&~a" indent)
+		    (format t "SUCCESS:: ~a ~a" name values)))
+	      (format t ")"))
+	    (values-list values)))
+	(dispatch))))
 
 (defmacro the-position-boundary (&body body)
-  `(let* ((the-position (+ the-position the-length))
-	  (the-length 0))
+  `(let ((the-position (+ the-position the-length))
+	 (the-length 0))
      ,@body))
 
 (defparameter *cap-stash* nil
@@ -36,55 +79,76 @@
      ,@body))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun %propagate-cap-stash-upwards-meat (up-var down-var)
+      (iter (for (key . val) in (car down-var))
+	    ;; (format t "Propagating ~a ~a ... " key val)
+	    (let ((it (assoc key (car up-var))))
+	      (if it
+		  (progn ;; (format t "update old~%")
+		    (setf (cdr it) val))
+		  (progn ;; (format t "create new~%")
+		    (push (cons key val) (car up-var)))))))
+  (defun %propagate-cap-stash-upwards-meat-nil (up-var down-var)
+    (progn (%propagate-cap-stash-upwards-meat up-var down-var) nil))
+  
   (defun propagate-cap-stash-upwards (up-var down-var body)
-    (with-gensyms (g!-vals g!-it)
-      (let ((meat `(iter (for (key . val) in (car ,down-var))
-			 ;; (format t "Propagating ~a ~a ... " key val)
-			 (let ((,g!-it (assoc key (car ,up-var))))
-			   (if ,g!-it
-			       (progn ;; (format t "update old~%")
-				 (setf (cdr ,g!-it) val))
-			       (progn ;; (format t "create new~%")
-				 (push (cons key val) (car ,up-var))))))))
-	(if (not body)
-	    `(progn ,meat nil)
-	    `(let ((,g!-vals (multiple-value-list (progn ,@body))))
-	       ,meat
-	       (values-list ,g!-vals)))))))
+    (if (not body)
+	`(%propagate-cap-stash-upwards-meat-nil ,up-var ,down-var)	
+	`(multiple-value-prog1 (progn ,@body)
+	   (%propagate-cap-stash-upwards-meat ,up-var ,down-var)))))
 
 (defmacro with-sub-cap-stash (&body body)
   `(with-fresh-cap-stash
      ,(propagate-cap-stash-upwards 'up-cap-stash '*cap-stash* body)))
 
+(defun %wrap-with-esrap-macrolets-v (thing args)
+  (cond ((characterp thing) (if args
+				(error "Descent with character has extra argument, &
+                                                                  but it shouldn't")
+				`(descend-with-rule 'character ,thing)))
+	((stringp thing) (if args
+			     (error "Descent with string has extra argument, &
+                                                               but it shouldn't")
+			     `(descend-with-rule 'string ,thing)))
+	((symbolp thing) `(descend-with-rule ',thing ,@args))
+	(t (error "Don't know how to descend with this : ~a" thing))))
+
+;;;cap
+(defun %%cap (key val)
+  (let ((it (assoc key (car *cap-stash*))))
+    (if it
+	(setf (cdr it)
+	      val)
+	(push (cons key val)
+	      (car *cap-stash*)))))
+(defun %wrap-with-esrap-macrolets-cap (key val)
+  (let ((key (intern (string key) "KEYWORD")))
+    `(%%cap ,key ,(maybe-wrap-in-descent val))))
+
+;;;recap
+(defun %%recap (key)
+  (let ((it (assoc key (car *cap-stash*))))
+    (if it
+	(cdr it)
+	(fail-parse-format "Key ~a is not captured (unbound)." key))))
+(defun %wrap-with-esrap-macrolets-recap (key)
+  (let ((key (intern (string key) "KEYWORD")))
+    `(%%recap ,key)))
+
+;;;recap?
+(defun %wrap-with-esrap-macrolets-recap? (key)
+  `(handler-case (recap ,key)
+     (internal-esrap-error () nil)))
+
 (defun wrap-with-esrap-macrolets (body)
   `(macrolet ((v (thing &rest args)
-		(cond ((characterp thing) (if args
-					      (error "Descent with character has extra argument, &
-                                                                  but it shouldn't")
-					      `(descend-with-rule 'character ,thing)))
-		      ((stringp thing) (if args
-					   (error "Descent with string has extra argument, &
-                                                               but it shouldn't")
-					   `(descend-with-rule 'string ,thing)))
-		      ((symbolp thing) `(descend-with-rule ',thing ,@args))
-		      (t (error "Don't know how to descend with this : ~a" thing))))
+		(%wrap-with-esrap-macrolets-v thing args))
 	      (cap (key val)
-		(let ((key (intern (string key) "KEYWORD")))
-		  (with-gensyms (g!-it)
-		    `(let ((,g!-it (assoc ,key (car *cap-stash*))))
-		       (if ,g!-it
-			   (setf (cdr ,g!-it) ,(maybe-wrap-in-descent val))
-			   (push (cons ,key ,(maybe-wrap-in-descent val)) (car *cap-stash*)))))))
+		(%wrap-with-esrap-macrolets-cap key val))
 	      (recap (key)
-		(let ((key (intern (string key) "KEYWORD")))
-		  (with-gensyms (g!-it)
-		    `(let ((,g!-it (assoc ,key (car *cap-stash*))))
-		       (if ,g!-it
-			   (cdr ,g!-it)
-			   (fail-parse-format "Key ~a is not captured (unbound)." ,key))))))
+		(%wrap-with-esrap-macrolets-recap key))
 	      (recap? (key)
-		`(handler-case (recap ,key)
-		   (internal-esrap-error () nil))))
+		(%wrap-with-esrap-macrolets-recap? key)))
      ,body))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -94,42 +158,92 @@
 	  ((symbolp thing) `(descend-with-rule ',thing))
 	  (t thing))))
 
+(defun make-anonymous-rule-lambda (name args body)
+  (multiple-value-bind
+	(name defun the-defun)
+      (make-rule-lambda
+       name args body)
+    (declare (ignorable name defun))
+    ;;FIXME::fragile hack based on position of defun in defrule
+    (progn
+      (setf (first (third the-defun)) 'lambda)
+      (setf (cdr (third the-defun))
+	    (cddr (third the-defun))))
+    the-defun))
+
 (defun make-rule-lambda (name args body)
-  (multiple-value-bind (reqs opts rest kwds allow-other-keys auxs kwds-p) (parse-ordinary-lambda-list args)
+  (multiple-value-bind (reqs opts rest kwds allow-other-keys auxs kwds-p)
+      (parse-ordinary-lambda-list args)
     (declare (ignore kwds))
     (if kwds-p (error "&KEY arguments are not supported"))
     (if allow-other-keys (error "&ALLOW-OTHER-KEYS is not supported"))
     (if auxs (error "&AUX variables are not supported, use LET"))
     (multiple-value-bind (body decls doc) (parse-body body :documentation t)
-      (wrap-with-esrap-macrolets
-       `(named-lambda ,(intern #?"ESRAP-$((string name))") (,@args)
-	  ,@(if doc `(,doc))
-	  ,@decls
-	  (with-fresh-cap-stash
-	    (with-cached-result (,name ,@reqs
-				       ,@(if rest
-					     `(,rest)
-					     (iter (for (opt-name opt-default opt-supplied-p) in opts)
-						   (collect opt-name)
-						   (if opt-supplied-p
-						       (collect opt-supplied-p)))))
-	      ,@body)))))))
+      (let* ((defun-name (intern #?"GENERATED-ESRAP-$((string name))"))
+	     (the-defun
+	      (wrap-with-esrap-macrolets
+	       `(defun ,defun-name (,@args)
+		  ,@(if doc `(,doc))
+		  ,@decls
+		  
+	;;	  (setf ,name ',name) ;;;;FIXME:: hack to have slime cross reference variables
+		  (with-fresh-cap-stash
+		    (with-cached-result
+			(,name ,@reqs
+			       ,@(if rest
+				     `(,rest)
+				     (iter (for (opt-name opt-default opt-supplied-p) in opts)
+					   (collect opt-name)
+					   (if opt-supplied-p
+					       (collect opt-supplied-p)))))
+		      ,@body))))))
+	(values
+	 defun-name
+	 the-defun
+	 the-defun)))))
 
 
+(defun %set-rule (name lambda)
+  (setf (gethash name *rules*)
+	lambda))
+(defun %set-sensitivity-t (name)
+  (setf (gethash name *rule-context-sensitivity*) t))
+(defun %set-sensitivity-nil (name)
+  ;;FIXME::shouldn't this be wrapped the same way esrap-liquid::*rules* is wrapped?
+  (setf (gethash name *rule-context-sensitivity*) nil))
 
+;;;;API that depends on dynamic value of *rules*
 (defmacro %defrule (name args &body body)
   (if-debug-fun "I'm starting to actually expand ~a!" name)
   ;; TODO: bug - C!-vars values are kept between different execution of a rule!
-  `(setf (gethash ',name *rules*)
-	 ,(make-rule-lambda name args body)))
-
+  (multiple-value-bind (fun-name def) (make-rule-lambda name args body)
+    `(progn
+       ,def
+       (%set-rule ',name
+		  ',fun-name))))
 (defmacro defrule (name args &body body)
   `(progn (%defrule ,name ,args ,@body)
-	  (setf (gethash ',name *rule-context-sensitivity*) t)))
-
+	  (%set-sensitivity-t ',name)))
 (defmacro def-nocontext-rule (name args &body body)
   `(progn (%defrule ,name ,args ,@body)
-	  (setf (gethash ',name *rule-context-sensitivity*) nil)))
+	  (%set-sensitivity-nil ',name)))
+
+;;;;;API that does not depend on dynamic value of rules, its explicit.
+(defmacro %defrule2 (name args rules &body body)
+  (if-debug-fun "I'm starting to actually expand ~a!" name)
+  ;; TODO: bug - C!-vars values are kept between different execution of a rule!
+  (multiple-value-bind (fun-name def) (make-rule-lambda name args body)
+    `(progn
+       ,def
+       (let ((esrap-liquid::*rules* ,rules))
+	 (%set-rule ',name
+		    ',fun-name)))))
+(defmacro defrule2 (name args rules &body body)
+  `(progn (%defrule2 ,name ,args ,rules ,@body)
+	  (%set-sensitivity-t ',name)))
+(defmacro def-nocontext-rule2 (name args rules &body body)
+  `(progn (%defrule2 ,name ,args ,rules ,@body)
+	  (%set-sensitivity-nil ',name)))
 
 
 (defmacro make-result (result &optional (length 0) beginning)
@@ -145,24 +259,28 @@
 
 
 (defmacro || (&rest clauses)
-  (with-gensyms (g!-result g!-the-length g!-ordered-choice g!-parse-errors)
+  (with-gensyms (g!-result g!-the-length g!-ordered-choice ;;g!-parse-errors
+			   )
     `(tracing-level
        (if-debug "||")
        (multiple-value-bind (,g!-result ,g!-the-length)
 	   ;; All this tricky business with BLOCK just for automatic LENGTH tracking.
 	   (block ,g!-ordered-choice
-	     (let (,g!-parse-errors)
+	     (progn ;;let (,g!-parse-errors)
 	       ,@(mapcar (lambda (clause)
 			   `(the-position-boundary
 			      (print-iter-state)
 			      (with-saved-iter-state (the-iter)
 				(handler-case (return-from ,g!-ordered-choice
-						(let ((res (with-sub-cap-stash ,(maybe-wrap-in-descent clause))))
+						(let ((res (with-sub-cap-stash
+							     ,(maybe-wrap-in-descent clause))))
 						  ;; (if-debug "|| pre-succeeding")
 						  (values res the-length)))
 				  (internal-esrap-error (e)
+				    (declare (ignorable e))
 				    (restore-iter-state)
-				    (push e ,g!-parse-errors))))))
+				    ;;(push e ,g!-parse-errors)
+				    )))))
 			 clauses)
 	       (if-debug "|| before failing P ~a L ~a" the-position the-length)
 	       (fail-parse "Optional parse failed")))
